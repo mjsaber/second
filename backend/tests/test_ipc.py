@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
 
 
@@ -124,13 +126,20 @@ class TestDispatch:
         """Verify that dispatch routes a diarize message correctly."""
         from main import dispatch
 
-        result = dispatch(
-            {
-                "type": "diarize",
-                "audio_path": "/tmp/test.wav",
-                "num_speakers": 2,
-            }
-        )
+        mock_pipeline_cls = MagicMock()
+        mock_pipeline_inst = MagicMock()
+        mock_pipeline_inst.diarize.return_value = MagicMock(segments=[])
+        mock_pipeline_inst.extract_embeddings.return_value = {}
+        mock_pipeline_cls.return_value = mock_pipeline_inst
+
+        with patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls):
+            result = dispatch(
+                {
+                    "type": "diarize",
+                    "audio_path": "/tmp/test.wav",
+                    "num_speakers": 2,
+                }
+            )
         assert result["type"] == "diarization_complete"
 
     def test_dispatch_routes_identify_speakers_message(self) -> None:
@@ -147,17 +156,27 @@ class TestDispatch:
 
     def test_dispatch_routes_summarize_message(self) -> None:
         """Verify that dispatch routes a summarize message correctly."""
-        from main import dispatch
+        from unittest.mock import patch
 
-        result = dispatch(
-            {
-                "type": "summarize",
-                "transcript": "Alice said hello. Bob said goodbye.",
-                "provider": "claude",
-                "model": "claude-sonnet-4-5-20250929",
-                "api_key": "sk-test-key",
-            }
-        )
+        from main import dispatch
+        from summarization.providers import LLMProvider, SummarizationResult
+
+        with patch("summarization.providers.SummarizationService.summarize") as mock_summarize:
+            mock_summarize.return_value = SummarizationResult(
+                markdown="# Summary",
+                provider=LLMProvider.CLAUDE,
+                model="claude-sonnet-4-5-20250929",
+                token_count=100,
+            )
+            result = dispatch(
+                {
+                    "type": "summarize",
+                    "transcript": "Alice said hello. Bob said goodbye.",
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-5-20250929",
+                    "api_key": "sk-test-key",
+                }
+            )
         assert result["type"] == "summary_complete"
 
 
@@ -197,11 +216,18 @@ class TestHandlers:
         """Verify that handle_diarize returns diarization result when audio_path is present."""
         from ipc.handlers import handle_diarize
 
+        mock_pipeline_cls = MagicMock()
+        mock_pipeline_inst = MagicMock()
+        mock_pipeline_inst.diarize.return_value = MagicMock(segments=[])
+        mock_pipeline_inst.extract_embeddings.return_value = {}
+        mock_pipeline_cls.return_value = mock_pipeline_inst
+
         msg = IPCMessage(
             type=MessageType.DIARIZE,
             payload={"audio_path": "/tmp/test.wav"},
         )
-        resp = handle_diarize(msg)
+        with patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls):
+            resp = handle_diarize(msg)
         assert resp.type == ResponseType.DIARIZATION_COMPLETE
 
     def test_handle_identify_speakers_validates_embeddings(self) -> None:
@@ -278,18 +304,28 @@ class TestHandlers:
 
     def test_handle_summarize_succeeds_with_all_required_fields(self) -> None:
         """Verify that handle_summarize returns summary when all required fields are present."""
-        from ipc.handlers import handle_summarize
+        from unittest.mock import patch
 
-        msg = IPCMessage(
-            type=MessageType.SUMMARIZE,
-            payload={
-                "transcript": "Alice said hello.",
-                "provider": "claude",
-                "model": "claude-sonnet-4-5-20250929",
-                "api_key": "sk-test-key",
-            },
-        )
-        resp = handle_summarize(msg)
+        from ipc.handlers import handle_summarize
+        from summarization.providers import LLMProvider, SummarizationResult
+
+        with patch("summarization.providers.SummarizationService.summarize") as mock_summarize:
+            mock_summarize.return_value = SummarizationResult(
+                markdown="# Summary",
+                provider=LLMProvider.CLAUDE,
+                model="claude-sonnet-4-5-20250929",
+                token_count=100,
+            )
+            msg = IPCMessage(
+                type=MessageType.SUMMARIZE,
+                payload={
+                    "transcript": "Alice said hello.",
+                    "provider": "claude",
+                    "model": "claude-sonnet-4-5-20250929",
+                    "api_key": "sk-test-key",
+                },
+            )
+            resp = handle_summarize(msg)
         assert resp.type == ResponseType.SUMMARY_COMPLETE
 
     def test_handle_health_returns_ok(self) -> None:

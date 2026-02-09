@@ -52,7 +52,7 @@ models/
 
 # Meeting data (privacy - never commit)
 meetings/
-summaries/
+/summaries/
 speaker_embeddings/
 
 # Logs
