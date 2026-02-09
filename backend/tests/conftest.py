@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 from db.database import DatabaseManager
@@ -16,12 +14,3 @@ def in_memory_db() -> DatabaseManager:
     db.initialize()
     yield db  # type: ignore[misc]
     db.close()
-
-
-@pytest.fixture
-def raw_sqlite_conn() -> sqlite3.Connection:
-    """Provide a raw SQLite in-memory connection for low-level tests."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    yield conn  # type: ignore[misc]
-    conn.close()

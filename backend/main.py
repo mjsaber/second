@@ -1,6 +1,6 @@
 """Main entry point for the Second Python sidecar.
 
-Communicates with the Electron main process via a JSON-over-stdin/stdout protocol.
+Communicates with the Tauri host process via a JSON-over-stdin/stdout protocol.
 Each line on stdin is a JSON message; each response is a JSON line on stdout.
 """
 
@@ -9,21 +9,24 @@ from __future__ import annotations
 import json
 import sys
 
+from ipc.handlers import HANDLER_MAP
+from ipc.protocol import IPCMessage, IPCResponse
+
 
 def main() -> None:
-    """Main entry point for the Python sidecar. Reads JSON from stdin, dispatches to handlers."""
+    """Read JSON lines from stdin, dispatch to handlers, write JSON responses to stdout."""
     for line in sys.stdin:
         try:
             message = json.loads(line.strip())
             response = dispatch(message)
             print(json.dumps(response), flush=True)
         except Exception as e:
-            error_response: dict[str, str] = {"type": "error", "message": str(e)}
+            error_response = IPCResponse.error(str(e)).to_dict()
             print(json.dumps(error_response), flush=True)
 
 
 def dispatch(message: dict[str, object]) -> dict[str, object]:
-    """Route messages to appropriate handlers.
+    """Route a raw message dict to the appropriate handler.
 
     Args:
         message: Parsed JSON message with at least a 'type' field.
@@ -31,18 +34,17 @@ def dispatch(message: dict[str, object]) -> dict[str, object]:
     Returns:
         Response dictionary to be serialized as JSON.
     """
-    msg_type = message.get("type")
+    msg = IPCMessage.from_dict(message)  # type: ignore[arg-type]
 
-    # Stub — will be implemented with real handlers for:
-    #   - "transcribe": start/stop transcription
-    #   - "summarize": generate meeting summary
-    #   - "identify_speaker": match speaker embedding
-    #   - "query_db": database operations
-    #   - "health": health check
-    if msg_type == "health":
-        return {"type": "health", "status": "ok"}
+    if not msg.validate():
+        return IPCResponse.error(f"Unknown message type: {msg.type}").to_dict()
 
-    return {"type": "error", "message": f"Unknown message type: {msg_type}"}
+    handler = HANDLER_MAP.get(msg.type)
+    if handler is None:
+        return IPCResponse.error(f"No handler registered for message type: {msg.type}").to_dict()
+
+    response = handler(msg)
+    return response.to_dict()
 
 
 if __name__ == "__main__":

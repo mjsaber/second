@@ -31,6 +31,9 @@ class ResponseType(StrEnum):
     ERROR = "error"
 
 
+_KNOWN_MESSAGE_TYPES: set[str] = {member.value for member in MessageType}
+
+
 class IPCMessage:
     """Represents an inbound message from the host process.
 
@@ -50,6 +53,10 @@ class IPCMessage:
         payload = {k: v for k, v in data.items() if k != "type"}
         return cls(type=msg_type, payload=payload)
 
+    def validate(self) -> bool:
+        """Check that the message type is a known MessageType."""
+        return self.type in _KNOWN_MESSAGE_TYPES
+
 
 class IPCResponse:
     """Represents an outbound response to the host process.
@@ -66,3 +73,22 @@ class IPCResponse:
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a dictionary suitable for JSON encoding."""
         return {"type": self.type, **self.data}
+
+    @classmethod
+    def error(cls, message: str) -> IPCResponse:
+        """Create an error response quickly.
+
+        Args:
+            message: Human-readable error description.
+        """
+        return cls(type=ResponseType.ERROR, data={"message": message})
+
+    @classmethod
+    def ok(cls, type: str, **data: Any) -> IPCResponse:
+        """Create a success response.
+
+        Args:
+            type: The response type identifier.
+            **data: Arbitrary response payload fields.
+        """
+        return cls(type=type, data=data)
