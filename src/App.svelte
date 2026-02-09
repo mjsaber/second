@@ -1,95 +1,159 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { appState } from './lib/stores/app.svelte.js';
+  import type { Page } from './lib/types/index.js';
+  import RecordingPage from './lib/components/RecordingPage.svelte';
+  import SummariesPage from './lib/components/SummariesPage.svelte';
+  import SettingsPage from './lib/components/SettingsPage.svelte';
 
-  let greetMsg = $state("");
-  let name = $state("");
+  interface NavItem {
+    page: Page;
+    label: string;
+  }
 
-  async function greet() {
-    greetMsg = await invoke("greet", { name });
+  const navItems: NavItem[] = [
+    { page: 'recording', label: 'Record' },
+    { page: 'summaries', label: 'Summaries' },
+    { page: 'settings', label: 'Settings' },
+  ];
+
+  function navigateTo(page: Page): void {
+    appState.currentPage = page;
   }
 </script>
 
-<main class="container">
-  <h1>Welcome to Second</h1>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1 class="app-title">Second</h1>
+    </div>
+    <nav class="sidebar-nav">
+      {#each navItems as item}
+        <button
+          class="nav-item"
+          class:active={appState.currentPage === item.page}
+          onclick={() => navigateTo(item.page)}
+        >
+          {item.label}
+        </button>
+      {/each}
+    </nav>
+    <div class="sidebar-footer">
+      <span class="connection-status" class:connected={appState.sidecarConnected}>
+        {appState.sidecarConnected ? 'Connected' : 'Disconnected'}
+      </span>
+    </div>
+  </aside>
 
-  <p>A local, privacy-first meeting note-taking tool.</p>
-
-  <form class="row" onsubmit={(e) => { e.preventDefault(); greet(); }}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-
-  <p>{greetMsg}</p>
-</main>
+  <main class="main-content">
+    {#if appState.currentPage === 'recording'}
+      <RecordingPage />
+    {:else if appState.currentPage === 'summaries'}
+      <SummariesPage />
+    {:else if appState.currentPage === 'settings'}
+      <SettingsPage />
+    {/if}
+  </main>
+</div>
 
 <style>
-  :root {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-    color: #0f0f0f;
-    background-color: #f6f6f6;
+  .app-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color: #f6f6f6;
-      background-color: #2f2f2f;
-    }
-  }
-
-  .container {
-    margin: 0;
-    padding-top: 10vh;
+  .sidebar {
+    width: 200px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    text-align: center;
+    background-color: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    border-right: 1px solid var(--sidebar-border);
+    user-select: none;
+    -webkit-user-select: none;
   }
 
-  .row {
+  .sidebar-header {
+    padding: 20px 16px 12px;
+    /* Allow dragging the window from the sidebar header on macOS */
+    -webkit-app-region: drag;
+  }
+
+  .app-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--sidebar-text);
+  }
+
+  .sidebar-nav {
+    flex: 1;
     display: flex;
-    justify-content: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
   }
 
-  input,
-  button {
-    border-radius: 8px;
-    border: 1px solid transparent;
-    padding: 0.6em 1.2em;
-    font-size: 1em;
+  .nav-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--sidebar-text-secondary);
+    font-size: 0.875rem;
     font-weight: 500;
     font-family: inherit;
-    color: #0f0f0f;
-    background-color: #ffffff;
-    transition: border-color 0.25s;
-    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-  }
-
-  button {
     cursor: pointer;
+    transition: background-color 0.1s ease, color 0.1s ease;
+    text-align: left;
+    -webkit-app-region: no-drag;
   }
 
-  button:hover {
-    border-color: #396cd8;
-  }
-  button:active {
-    border-color: #396cd8;
-    background-color: #e8e8e8;
+  .nav-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
-  input {
-    outline: none;
+  .nav-item.active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
   }
 
-  @media (prefers-color-scheme: dark) {
-    input,
-    button {
-      color: #f6f6f6;
-      background-color: #0f0f0f98;
-    }
-    button:active {
-      background-color: #0f0f0f69;
-    }
+  .sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .connection-status {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .connection-status::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #ef4444;
+  }
+
+  .connection-status.connected::before {
+    background-color: #22c55e;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    background-color: var(--color-bg);
+    color: var(--color-text);
   }
 </style>
