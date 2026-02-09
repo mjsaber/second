@@ -75,7 +75,7 @@ class SummaryFileManager:
         path = (self.base_dir / sanitized / f"{date}.md").resolve()
         # Final path traversal guard: ensure path is within base_dir
         if not str(path).startswith(str(self.base_dir)):
-            raise ValueError(f"Path traversal detected: resulting path escapes base directory")
+            raise ValueError("Path traversal detected: resulting path escapes base directory")
         return path
 
     @staticmethod

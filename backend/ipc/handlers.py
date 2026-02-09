@@ -85,10 +85,29 @@ def handle_identify_speakers(msg: IPCMessage) -> IPCResponse:
     """Handle an identify_speakers message.
 
     Required payload fields: embeddings.
+    Optional payload fields: known_embeddings.
     """
     if "embeddings" not in msg.payload:
         return IPCResponse.error("Missing required field 'embeddings' in identify_speakers message")
-    return IPCResponse.ok(ResponseType.SPEAKER_MATCH, matches={})
+
+    from speaker_id.identifier import SpeakerIdentifier
+
+    embeddings: dict[str, list[float]] = msg.payload["embeddings"]
+    known_embeddings: dict[str, list[float]] | None = msg.payload.get("known_embeddings")
+
+    identifier = SpeakerIdentifier()
+    matches = identifier.identify(embeddings, known_embeddings=known_embeddings)
+
+    matches_data = [
+        {
+            "speaker_label": m.speaker_label,
+            "matched_name": m.matched_name,
+            "confidence": m.confidence,
+        }
+        for m in matches
+    ]
+
+    return IPCResponse.ok(ResponseType.SPEAKER_MATCH, matches=matches_data)
 
 
 def handle_summarize(msg: IPCMessage) -> IPCResponse:
