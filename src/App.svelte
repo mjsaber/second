@@ -4,6 +4,7 @@
   import RecordingPage from './lib/components/RecordingPage.svelte';
   import SummariesPage from './lib/components/SummariesPage.svelte';
   import SettingsPage from './lib/components/SettingsPage.svelte';
+  import SpeakerLabelingModal from './lib/components/SpeakerLabelingModal.svelte';
 
   interface NavItem {
     page: Page;
@@ -54,6 +55,8 @@
     {/if}
   </main>
 </div>
+
+<SpeakerLabelingModal />
 
 <style>
   .app-shell {
