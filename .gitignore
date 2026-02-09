@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Rust / Tauri
+target/
+*.rs.bk
+
+# Node / Svelte
+node_modules/
+.svelte-kit/
+.output/
+
+# Tauri
+src-tauri/target/
+
+# Audio files (keep local, don't commit)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+
+# Models (too large for git)
+models/
+*.bin
+*.pt
+*.onnx
+*.mlpackage
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Meeting data (privacy - never commit)
+meetings/
+summaries/
+speaker_embeddings/
+
+# Logs
+*.log
+
+# Python tooling caches
+.ruff_cache/
+.pytest_cache/

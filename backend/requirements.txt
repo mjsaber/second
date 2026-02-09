@@ -1,0 +1,12 @@
+# Core dependencies
+mlx-whisper>=0.4
+pyannote-audio>=3.1
+torch>=2.1
+numpy>=1.26
+pydantic>=2.5
+
+# Dev dependencies
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.4
+mypy>=1.9
