@@ -7,6 +7,9 @@
     sendToSidecar,
     diarize,
     summarize,
+    startAudioRecording,
+    stopAudioRecording,
+    saveSummary,
   } from '../services/sidecar.js';
 
   let timerInterval: ReturnType<typeof setInterval> | null = $state(null);
@@ -104,8 +107,9 @@
         appState.sidecarConnected = true;
       }
 
-      // Tell the sidecar to begin recording
-      await sendToSidecar({ type: 'start_recording', device: appState.settings.audioDevice });
+      // Tell Rust to begin audio recording
+      const deviceArg = appState.settings.audioDevice === 'default' ? undefined : appState.settings.audioDevice;
+      await startAudioRecording(deviceArg);
 
       // Update state
       appState.isRecording = true;
@@ -167,9 +171,8 @@
     appState.isRecording = false;
 
     try {
-      // Tell sidecar to stop recording and get the audio path
-      const stopResponse = await sendToSidecar({ type: 'stop_recording' });
-      const audioPath = (stopResponse.audio_path as string) ?? '';
+      // Tell Rust to stop audio recording and get the audio path
+      const audioPath = await stopAudioRecording();
 
       // Update meeting
       if (appState.currentMeeting) {
@@ -225,12 +228,28 @@
         .map((seg) => (seg.speaker ? `${seg.speaker}: ${seg.text}` : seg.text))
         .join('\n');
 
-      await summarize(
+      const summarizeResult = await summarize(
         fullTranscript,
         appState.settings.llmProvider,
         appState.settings.modelName,
         appState.settings.apiKey,
       );
+
+      // ---- Persist summary ----
+      const summaryContent = (summarizeResult.markdown as string) ?? '';
+      const speakerNames = appState.detectedSpeakers.map(
+        (s) => s.suggestedName ?? s.label,
+      );
+      const meetingId = appState.currentMeeting?.id ?? Date.now();
+
+      await saveSummary({
+        meetingId,
+        provider: appState.settings.llmProvider,
+        model: appState.settings.modelName,
+        content: summaryContent,
+        speakerNames,
+        date: new Date().toISOString().split('T')[0],
+      });
 
       // ---- Complete ----
       appState.processingState = 'complete';

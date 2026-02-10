@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { Speaker, SummaryEntry, SummaryDetail } from '../types/index.js';
-  // TODO: Uncomment when sidecar IPC handlers are wired up
-  // import { sendToSidecar } from '../services/sidecar.js';
+  import {
+    getAllSpeakers,
+    getSummariesForSpeaker,
+    getSummaryDetail,
+    searchSummaries,
+  } from '../services/sidecar.js';
 
   // ---------------------------------------------------------------------------
   // State
@@ -21,55 +25,35 @@
 
   /** Fetch all speakers from the backend. */
   async function loadSpeakers(): Promise<void> {
-    // TODO: Replace with real sidecar call:
-    // const response = await sendToSidecar({ type: 'get_all_speakers' });
-    // speakers = (response.speakers as any[]).map(s => ({
-    //   id: s.id,
-    //   name: s.name,
-    //   meetingCount: s.meeting_count ?? 0,
-    // }));
-    speakers = [
-      { id: 1, name: 'Alice Chen', meetingCount: 12 },
-      { id: 2, name: 'Bob Martinez', meetingCount: 8 },
-      { id: 3, name: 'Carol Kim', meetingCount: 5 },
-      { id: 4, name: 'David Park', meetingCount: 3 },
-    ];
+    try {
+      const response = await getAllSpeakers();
+      const raw = (response.speakers ?? []) as Array<Record<string, unknown>>;
+      speakers = raw.map((s) => ({
+        id: s.id as number,
+        name: s.name as string,
+        meetingCount: (s.meeting_count as number) ?? 0,
+      }));
+    } catch {
+      speakers = [];
+    }
   }
 
   /** Fetch summaries for a specific speaker. */
   async function loadSummariesForSpeaker(speakerId: number): Promise<void> {
     loading = true;
     try {
-      // TODO: Replace with real sidecar call:
-      // const speaker = speakers.find(s => s.id === speakerId);
-      // const response = await sendToSidecar({
-      //   type: 'get_summaries_for_speaker',
-      //   speaker_id: speakerId,
-      // });
-      // summaries = (response.summaries as any[]).map(s => ({
-      //   id: s.id,
-      //   date: s.date,
-      //   speakerName: speaker?.name ?? 'Unknown',
-      //   preview: s.preview,
-      // }));
-
-      // Placeholder data keyed by speaker
-      const placeholderSummaries: Record<number, SummaryEntry[]> = {
-        1: [
-          { id: 1, date: '2025-01-15', speakerName: 'Alice Chen', preview: 'Discussed Q1 roadmap priorities and team allocation for the new ML pipeline project.' },
-          { id: 2, date: '2025-01-12', speakerName: 'Alice Chen', preview: 'Sprint review: completed 3 epics, 2 carry-overs to next sprint. Performance metrics improved 15%.' },
-          { id: 5, date: '2025-01-05', speakerName: 'Alice Chen', preview: 'Onboarding plan for two new engineers joining the platform team in February.' },
-          { id: 6, date: '2024-12-20', speakerName: 'Alice Chen', preview: 'Year-end retrospective covering deployment frequency, incident response, and team velocity trends.' },
-        ],
-        2: [
-          { id: 3, date: '2025-01-10', speakerName: 'Bob Martinez', preview: 'API design review for v2 endpoints. Agreed on REST conventions and pagination approach.' },
-          { id: 7, date: '2025-01-03', speakerName: 'Bob Martinez', preview: 'Database migration strategy for moving user records to the new schema without downtime.' },
-        ],
-        3: [
-          { id: 4, date: '2025-01-08', speakerName: 'Carol Kim', preview: 'UX research findings: users prefer sidebar navigation, want keyboard shortcuts.' },
-        ],
-      };
-      summaries = placeholderSummaries[speakerId] ?? [];
+      const speaker = speakers.find((s) => s.id === speakerId);
+      const speakerName = speaker?.name ?? 'Unknown';
+      const response = await getSummariesForSpeaker(speakerName);
+      const raw = (response.summaries ?? []) as Array<Record<string, unknown>>;
+      summaries = raw.map((s) => ({
+        id: s.id as number,
+        date: ((s.date as string) ?? (s.created_at as string) ?? '').split('T')[0],
+        speakerName,
+        preview: (s.preview_text as string) ?? ((s.content as string) ?? '').slice(0, 200),
+      }));
+    } catch {
+      summaries = [];
     } finally {
       loading = false;
     }
@@ -79,81 +63,18 @@
   async function loadSummaryDetail(summaryId: number): Promise<void> {
     detailLoading = true;
     try {
-      // TODO: Replace with real sidecar call:
-      // const response = await sendToSidecar({
-      //   type: 'get_summary_detail',
-      //   summary_id: summaryId,
-      // });
-      // summaryDetail = {
-      //   id: response.id as number,
-      //   meetingId: response.meeting_id as number,
-      //   provider: response.provider as string,
-      //   model: response.model as string,
-      //   content: response.content as string,
-      //   filePath: response.file_path as string | undefined,
-      //   createdAt: response.created_at as string,
-      // };
-
-      // Placeholder detail content
-      const placeholderDetails: Record<number, SummaryDetail> = {
-        1: {
-          id: 1,
-          meetingId: 101,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## Q1 Roadmap Discussion\n\n### Key Decisions\n- **ML Pipeline**: Approved 3-engineer allocation starting Feb 1\n- **Timeline**: MVP delivery targeted for end of March\n- **Dependencies**: Need data team sign-off on new feature store schema\n\n### Action Items\n1. Alice to draft technical design doc by Jan 20\n2. Set up bi-weekly sync with data engineering\n3. Provision GPU instances for model training\n\n### Open Questions\n- Should we build or buy the feature store component?\n- What SLA commitments can we make for the inference endpoint?`,
-          createdAt: '2025-01-15T10:30:00Z',
-        },
-        2: {
-          id: 2,
-          meetingId: 102,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## Sprint Review - Jan 12\n\n### Completed\n- Epic: User authentication overhaul (OAuth2 + MFA)\n- Epic: Dashboard performance optimization (-40% load time)\n- Epic: Notification system redesign\n\n### Carried Over\n- Real-time collaboration features (blocked on WebSocket infra)\n- Admin audit log export\n\n### Metrics\n- **Velocity**: 42 story points (up from 36)\n- **Bug rate**: 3 bugs per epic (down from 5)\n- **Deployment frequency**: 2.1 per day`,
-          createdAt: '2025-01-12T14:00:00Z',
-        },
-        3: {
-          id: 3,
-          meetingId: 103,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## API v2 Design Review\n\n### Conventions Agreed\n- RESTful resource naming: plural nouns, kebab-case\n- Pagination: cursor-based using \`after\` parameter\n- Error format: RFC 7807 Problem Details\n- Versioning: URL path prefix \`/v2/\`\n\n### New Endpoints\n- \`GET /v2/projects\` - list projects with filtering\n- \`POST /v2/projects/{id}/runs\` - trigger pipeline run\n- \`GET /v2/metrics/summary\` - aggregated metrics\n\n### Breaking Changes from v1\n- Removed XML response support\n- Auth header changed from \`X-API-Key\` to \`Authorization: Bearer\``,
-          createdAt: '2025-01-10T11:00:00Z',
-        },
-        4: {
-          id: 4,
-          meetingId: 104,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## UX Research Findings\n\n### Methodology\n- 12 user interviews conducted over 2 weeks\n- Task-based usability testing with prototype\n- SUS score: 78/100 (above average)\n\n### Key Findings\n1. **Navigation**: 9/12 users preferred sidebar over top nav\n2. **Shortcuts**: Power users strongly want keyboard shortcuts (Cmd+K, etc.)\n3. **Search**: Full-text search is the #1 requested feature\n4. **Dark mode**: 7/12 users use dark mode as default\n\n### Recommendations\n- Implement sidebar navigation as primary pattern\n- Add command palette (Cmd+K) in next release\n- Prioritize full-text search over advanced filters`,
-          createdAt: '2025-01-08T09:30:00Z',
-        },
-        5: {
-          id: 5,
-          meetingId: 105,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## Onboarding Plan - February Cohort\n\n### New Engineers\n- **Priya Sharma** - Backend, starting Feb 3\n- **Jake Thompson** - Full-stack, starting Feb 10\n\n### Week 1 Schedule\n- Day 1: Team introductions, dev environment setup\n- Day 2: Architecture overview, codebase walkthrough\n- Day 3-5: Starter ticket (small bug fix to learn the workflow)\n\n### Mentorship\n- Alice pairing with Priya on backend systems\n- Bob pairing with Jake on API layer`,
-          createdAt: '2025-01-05T15:00:00Z',
-        },
-        6: {
-          id: 6,
-          meetingId: 106,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## Year-End Retrospective 2024\n\n### Highlights\n- Deployment frequency increased from 0.5/day to 2.1/day\n- Incident response time decreased from 45min to 12min avg\n- Team velocity grew 35% over the year\n\n### Areas for Improvement\n- Technical debt in auth module needs dedicated sprint\n- Cross-team communication still relies too heavily on Slack\n- Testing coverage on frontend remains below 60%\n\n### 2025 Goals\n- Achieve 99.95% uptime SLA\n- Reduce mean time to recovery to under 5 minutes\n- Hire 3 additional engineers for platform team`,
-          createdAt: '2024-12-20T16:00:00Z',
-        },
-        7: {
-          id: 7,
-          meetingId: 107,
-          provider: 'claude',
-          model: 'claude-sonnet-4-5-20250929',
-          content: `## Database Migration Strategy\n\n### Overview\nMigrating 2.4M user records to the new normalized schema with zero downtime.\n\n### Approach: Dual-Write + Backfill\n1. Deploy new schema alongside old (additive migration)\n2. Enable dual-write to both schemas\n3. Backfill historical records in batches of 10K\n4. Validate data consistency with checksums\n5. Switch reads to new schema\n6. Remove old schema after 2-week monitoring period\n\n### Risk Mitigation\n- Rollback plan at each stage\n- Feature flag to switch read path instantly\n- Shadow traffic comparison for 48 hours before cutover`,
-          createdAt: '2025-01-03T13:00:00Z',
-        },
+      const response = await getSummaryDetail(summaryId);
+      summaryDetail = {
+        id: response.id as number,
+        meetingId: response.meeting_id as number,
+        provider: response.provider as string,
+        model: response.model as string,
+        content: response.content as string,
+        filePath: response.file_path as string | undefined,
+        createdAt: response.created_at as string,
       };
-      summaryDetail = placeholderDetails[summaryId] ?? null;
+    } catch {
+      summaryDetail = null;
     } finally {
       detailLoading = false;
     }
@@ -167,34 +88,16 @@
     }
     loading = true;
     try {
-      // TODO: Replace with real sidecar call:
-      // const response = await sendToSidecar({
-      //   type: 'search_summaries',
-      //   query: query,
-      // });
-      // summaries = (response.results as any[]).map(r => ({
-      //   id: r.id,
-      //   date: r.date,
-      //   speakerName: r.speaker_name,
-      //   preview: r.preview,
-      // }));
-
-      // Placeholder: simulate FTS by filtering all placeholder entries
-      const allEntries: SummaryEntry[] = [
-        { id: 1, date: '2025-01-15', speakerName: 'Alice Chen', preview: 'Discussed Q1 roadmap priorities and team allocation for the new ML pipeline project.' },
-        { id: 2, date: '2025-01-12', speakerName: 'Alice Chen', preview: 'Sprint review: completed 3 epics, 2 carry-overs to next sprint. Performance metrics improved 15%.' },
-        { id: 3, date: '2025-01-10', speakerName: 'Bob Martinez', preview: 'API design review for v2 endpoints. Agreed on REST conventions and pagination approach.' },
-        { id: 4, date: '2025-01-08', speakerName: 'Carol Kim', preview: 'UX research findings: users prefer sidebar navigation, want keyboard shortcuts.' },
-        { id: 5, date: '2025-01-05', speakerName: 'Alice Chen', preview: 'Onboarding plan for two new engineers joining the platform team in February.' },
-        { id: 6, date: '2024-12-20', speakerName: 'Alice Chen', preview: 'Year-end retrospective covering deployment frequency, incident response, and team velocity trends.' },
-        { id: 7, date: '2025-01-03', speakerName: 'Bob Martinez', preview: 'Database migration strategy for moving user records to the new schema without downtime.' },
-      ];
-      const lowerQuery = query.toLowerCase();
-      summaries = allEntries.filter(
-        (e) =>
-          e.preview.toLowerCase().includes(lowerQuery) ||
-          e.speakerName.toLowerCase().includes(lowerQuery)
-      );
+      const response = await searchSummaries(query);
+      const raw = (response.results ?? []) as Array<Record<string, unknown>>;
+      summaries = raw.map((r) => ({
+        id: r.id as number,
+        date: ((r.created_at as string) ?? '').split('T')[0],
+        speakerName: (r.speaker_name as string) ?? '',
+        preview: ((r.content as string) ?? '').slice(0, 200),
+      }));
+    } catch {
+      summaries = [];
     } finally {
       loading = false;
     }

@@ -1,13 +1,50 @@
 <script lang="ts">
   import type { AppSettings } from '../types/index.js';
   import { appState } from '../stores/app.svelte.js';
+  import {
+    loadSettings,
+    saveSettings,
+    listAudioDevices,
+  } from '../services/sidecar.js';
 
   let showApiKey = $state(false);
   let saveMessage = $state('');
   let saveTimeout: ReturnType<typeof setTimeout> | null = $state(null);
+  let audioDevices = $state<string[]>([]);
 
-  // Cleanup timeout on unmount
+  // Load settings and audio devices on mount, cleanup timeout on unmount
   $effect(() => {
+    loadSettings()
+      .then((response) => {
+        const s = (response.settings ?? {}) as Record<string, string>;
+        if (s.llm_provider) {
+          appState.settings.llmProvider = s.llm_provider as AppSettings['llmProvider'];
+        }
+        if (s.model_name) {
+          appState.settings.modelName = s.model_name;
+        }
+        if (s.api_key) {
+          appState.settings.apiKey = s.api_key;
+        }
+        if (s.audio_device) {
+          appState.settings.audioDevice = s.audio_device;
+        }
+        if (s.audio_retention) {
+          appState.settings.audioRetention = s.audio_retention as AppSettings['audioRetention'];
+        }
+      })
+      .catch(() => {
+        // Ignore load errors — keep current defaults
+      });
+
+    listAudioDevices()
+      .then((devices) => {
+        audioDevices = devices;
+      })
+      .catch(() => {
+        audioDevices = [];
+      });
+
     return () => {
       if (saveTimeout) clearTimeout(saveTimeout);
     };
@@ -23,30 +60,35 @@
   let currentPlaceholder = $derived(modelPlaceholders[appState.settings.llmProvider]);
   let isOllama = $derived(appState.settings.llmProvider === 'ollama');
 
-  function handleSave(): void {
-    // Settings are already bound to appState.settings via bind:value/bind:group,
-    // so the store is always in sync. We just need to show feedback
-    // and (TODO) persist via sidecar.
-    console.log('Settings saved:', {
-      ...appState.settings,
-      apiKey: appState.settings.apiKey ? '***' : '',
-    });
+  async function handleSave(): Promise<void> {
+    try {
+      await saveSettings({
+        llm_provider: appState.settings.llmProvider,
+        model_name: appState.settings.modelName,
+        api_key: appState.settings.apiKey,
+        audio_device: appState.settings.audioDevice,
+        audio_retention: appState.settings.audioRetention,
+      });
 
-    // TODO: persist to SQLite via sidecar
-    // await sendToSidecar({
-    //   type: 'save_settings',
-    //   settings: { ...appState.settings, apiKey: appState.settings.apiKey },
-    // });
-
-    // Show success feedback
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
+      // Show success feedback
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+      }
+      saveMessage = 'Settings saved';
+      saveTimeout = setTimeout(() => {
+        saveMessage = '';
+        saveTimeout = null;
+      }, 2000);
+    } catch (err) {
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+      }
+      saveMessage = err instanceof Error ? err.message : 'Failed to save settings';
+      saveTimeout = setTimeout(() => {
+        saveMessage = '';
+        saveTimeout = null;
+      }, 3000);
     }
-    saveMessage = 'Settings saved';
-    saveTimeout = setTimeout(() => {
-      saveMessage = '';
-      saveTimeout = null;
-    }, 2000);
   }
 </script>
 
@@ -155,7 +197,9 @@
           class="select-input"
         >
           <option value="default">System Default</option>
-          <!-- TODO: enumerate real audio devices -->
+          {#each audioDevices as device}
+            <option value={device}>{device}</option>
+          {/each}
         </select>
       </div>
       <div class="form-field">

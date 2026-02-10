@@ -81,3 +81,76 @@ export async function summarize(
     api_key: apiKey,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Audio device commands (Rust Tauri commands)
+// ---------------------------------------------------------------------------
+
+/** List all available audio input device names. */
+export async function listAudioDevices(): Promise<string[]> {
+  return invoke<string[]>('list_audio_devices');
+}
+
+/** Start recording audio from the specified device (or the default device). */
+export async function startAudioRecording(deviceName?: string): Promise<string> {
+  return invoke<string>('start_audio_recording', { deviceName: deviceName ?? null });
+}
+
+/** Stop the current audio recording. Returns the path to the finalized WAV file. */
+export async function stopAudioRecording(): Promise<string> {
+  return invoke<string>('stop_audio_recording');
+}
+
+// ---------------------------------------------------------------------------
+// Sidecar IPC wrappers (new handlers)
+// ---------------------------------------------------------------------------
+
+/** Persist a summary to the database and write it to disk. */
+export async function saveSummary(params: {
+  meetingId: number;
+  provider: string;
+  model: string;
+  content: string;
+  speakerNames: string[];
+  date: string;
+}): Promise<Record<string, unknown>> {
+  return sendToSidecar({
+    type: 'save_summary',
+    meeting_id: params.meetingId,
+    provider: params.provider,
+    model: params.model,
+    content: params.content,
+    speaker_names: params.speakerNames,
+    date: params.date,
+  });
+}
+
+/** Fetch all speakers with their meeting counts. */
+export async function getAllSpeakers(): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'get_all_speakers' });
+}
+
+/** Fetch summaries for a specific speaker by name. */
+export async function getSummariesForSpeaker(speakerName: string): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'get_summaries_for_speaker', speaker_name: speakerName });
+}
+
+/** Fetch the full detail for a summary by ID. */
+export async function getSummaryDetail(summaryId: number): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'get_summary_detail', summary_id: summaryId });
+}
+
+/** Search across all summaries using full-text search. */
+export async function searchSummaries(query: string): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'search_summaries', query });
+}
+
+/** Persist settings to the database. */
+export async function saveSettings(settings: Record<string, string>): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'save_settings', settings });
+}
+
+/** Load settings from the database. */
+export async function loadSettings(): Promise<Record<string, unknown>> {
+  return sendToSidecar({ type: 'load_settings' });
+}
