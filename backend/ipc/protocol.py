@@ -18,6 +18,13 @@ class MessageType(StrEnum):
     IDENTIFY_SPEAKERS = "identify_speakers"
     SUMMARIZE = "summarize"
     HEALTH = "health"
+    SAVE_SUMMARY = "save_summary"
+    GET_ALL_SPEAKERS = "get_all_speakers"
+    GET_SUMMARIES_FOR_SPEAKER = "get_summaries_for_speaker"
+    GET_SUMMARY_DETAIL = "get_summary_detail"
+    SEARCH_SUMMARIES = "search_summaries"
+    SAVE_SETTINGS = "save_settings"
+    LOAD_SETTINGS = "load_settings"
 
 
 class ResponseType(StrEnum):
@@ -29,6 +36,13 @@ class ResponseType(StrEnum):
     SUMMARY_COMPLETE = "summary_complete"
     HEALTH = "health"
     ERROR = "error"
+    SUMMARY_SAVED = "summary_saved"
+    SPEAKERS_LIST = "speakers_list"
+    SUMMARIES_LIST = "summaries_list"
+    SUMMARY_DETAIL = "summary_detail"
+    SEARCH_RESULTS = "search_results"
+    SETTINGS_SAVED = "settings_saved"
+    SETTINGS_LOADED = "settings_loaded"
 
 
 _KNOWN_MESSAGE_TYPES: set[str] = {member.value for member in MessageType}

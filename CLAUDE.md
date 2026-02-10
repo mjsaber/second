@@ -59,13 +59,20 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 
 ### Python (backend/)
 
-- **Runtime**: Python 3.11+
+- **Runtime**: Python 3.11+ (required — uses `StrEnum` and other 3.11+ features)
+- **Virtualenv**: All Python work MUST use the project venv at `backend/.venv`. macOS system Python is 3.9 and will NOT work.
 - **Formatter + Linter**: `ruff` (replaces black + flake8 + isort — single fast tool)
 - **Type Checker**: `mypy --strict`
 - **Tests**: `pytest` with `pytest-asyncio` for async code
 - **Style**: Type annotations on all function signatures. Docstrings on public functions only.
 
 ```bash
+# Set up venv (one-time) — use any Python 3.11+
+cd backend && python3.13 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# Always activate venv before running Python commands
+source backend/.venv/bin/activate
+
 # Check everything
 ruff check . && ruff format --check . && mypy . && pytest
 ```

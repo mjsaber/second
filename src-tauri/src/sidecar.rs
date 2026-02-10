@@ -165,17 +165,7 @@ impl Drop for SidecarManager {
 /// # Errors
 /// Returns an error if no Python interpreter can be found.
 pub fn find_python(backend_dir: Option<&str>) -> Result<String, String> {
-    // 1. python3
-    if command_exists("python3") {
-        return Ok("python3".into());
-    }
-
-    // 2. python
-    if command_exists("python") {
-        return Ok("python".into());
-    }
-
-    // 3. .venv inside the backend directory
+    // 1. .venv inside the backend directory (preferred — correct Python version + deps)
     if let Some(dir) = backend_dir {
         let venv_python = Path::new(dir).join(".venv/bin/python");
         if venv_python.exists() {
@@ -186,7 +176,17 @@ pub fn find_python(backend_dir: Option<&str>) -> Result<String, String> {
         }
     }
 
-    Err("Could not find a Python interpreter. Install Python 3 or create a virtualenv in the backend directory.".into())
+    // 2. python3 on PATH
+    if command_exists("python3") {
+        return Ok("python3".into());
+    }
+
+    // 3. python on PATH
+    if command_exists("python") {
+        return Ok("python".into());
+    }
+
+    Err("Could not find a Python interpreter. Create a virtualenv in backend/.venv or install Python 3.11+.".into())
 }
 
 /// Resolve the backend directory path.
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn test_find_python_with_nonexistent_venv() {
         let result = find_python(Some("/tmp/definitely_does_not_exist_12345"));
-        // Should still try system python first; only errors if none found.
+        // Venv doesn't exist, so falls back to system python; only errors if none found.
         match result {
             Ok(path) => assert!(!path.is_empty()),
             Err(e) => assert!(e.contains("Could not find")),
