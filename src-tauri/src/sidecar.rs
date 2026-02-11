@@ -209,22 +209,39 @@ pub fn find_backend_dir() -> Result<String, String> {
         ));
     }
 
-    // 2. Relative to executable
+    // 2. Relative to executable (handles both release and dev builds)
+    //    - Release: exe is at <project>/second  => ../backend works
+    //    - Dev:     exe is at src-tauri/target/debug/second => ../../../backend works
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            let backend = exe_dir.join("../backend");
-            if backend.is_dir() {
-                return backend
-                    .canonicalize()
-                    .map_err(|e| format!("Failed to canonicalize backend path: {e}"))?
-                    .to_str()
-                    .map(String::from)
-                    .ok_or_else(|| "Backend path is not valid UTF-8".into());
+            for relative in ["../backend", "../../../backend"] {
+                let backend = exe_dir.join(relative);
+                if backend.is_dir() {
+                    return backend
+                        .canonicalize()
+                        .map_err(|e| format!("Failed to canonicalize backend path: {e}"))?
+                        .to_str()
+                        .map(String::from)
+                        .ok_or_else(|| "Backend path is not valid UTF-8".into());
+                }
             }
         }
     }
 
-    Err("Could not find the backend directory. Set SECOND_BACKEND_DIR or ensure ../backend/ exists relative to the executable.".into())
+    // 3. Relative to current working directory (dev mode — npx tauri dev runs from project root)
+    if let Ok(cwd) = std::env::current_dir() {
+        let backend = cwd.join("backend");
+        if backend.is_dir() {
+            return backend
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize backend path: {e}"))?
+                .to_str()
+                .map(String::from)
+                .ok_or_else(|| "Backend path is not valid UTF-8".into());
+        }
+    }
+
+    Err("Could not find the backend directory. Set SECOND_BACKEND_DIR or ensure backend/ exists relative to the project root.".into())
 }
 
 /// Check whether a command is available on `$PATH` by running it with
