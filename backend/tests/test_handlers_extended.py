@@ -16,12 +16,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from db.database import DatabaseManager
+from ipc import handlers as _handlers_module
 from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_engine_cache() -> None:
+    """Clear the transcription engine cache between tests for mock isolation."""
+    _handlers_module._transcription_engines.clear()
 
 
 @pytest.fixture

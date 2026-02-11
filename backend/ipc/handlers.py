@@ -16,7 +16,7 @@ from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
 # ---------------------------------------------------------------------------
 
 _db_instance: Any = None
-_engine_instance: Any = None
+_transcription_engines: dict[str, Any] = {}
 
 # Default settings values
 _SETTINGS_DEFAULTS: dict[str, str] = {
@@ -73,7 +73,7 @@ def handle_transcribe_chunk(msg: IPCMessage) -> IPCResponse:
     and returns the transcription result.
 
     Required payload fields: audio_base64.
-    Optional payload fields: initial_prompt.
+    Optional payload fields: initial_prompt, language.
     """
     if "audio_base64" not in msg.payload:
         return IPCResponse.error(
@@ -84,12 +84,18 @@ def handle_transcribe_chunk(msg: IPCMessage) -> IPCResponse:
 
     audio_bytes = base64.b64decode(msg.payload["audio_base64"])
     initial_prompt: str = msg.payload.get("initial_prompt", "")
+    language: str | None = msg.payload.get("language")
 
     try:
         from transcription.engine import TranscriptionEngine
 
-        engine = TranscriptionEngine()
-        engine.load_model()
+        # Reuse engine per language to avoid reloading the model each call
+        cache_key = language or "_auto"
+        if cache_key not in _transcription_engines:
+            engine = TranscriptionEngine(language=language)
+            engine.load_model()
+            _transcription_engines[cache_key] = engine
+        engine = _transcription_engines[cache_key]
         segments = engine.transcribe(audio_bytes, initial_prompt=initial_prompt)
 
         full_text = "".join(seg.text for seg in segments).strip()

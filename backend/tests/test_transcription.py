@@ -50,9 +50,9 @@ class TestTranscriptionEngine:
             engine.transcribe(b"fake audio data")
 
     def test_engine_initializes_with_default_language(self) -> None:
-        """Verify that the engine defaults to English language."""
+        """Verify that the engine defaults to auto-detect (None)."""
         engine = TranscriptionEngine()
-        assert engine.language == "en"
+        assert engine.language is None
 
     def test_engine_accepts_custom_language(self) -> None:
         """Verify that a custom language can be set at construction."""

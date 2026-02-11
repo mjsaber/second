@@ -15,7 +15,10 @@ from ipc.protocol import IPCMessage, IPCResponse
 
 def main() -> None:
     """Read JSON lines from stdin, dispatch to handlers, write JSON responses to stdout."""
-    for line in sys.stdin:
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break  # EOF — host process closed stdin
         try:
             message = json.loads(line.strip())
             response = dispatch(message)
