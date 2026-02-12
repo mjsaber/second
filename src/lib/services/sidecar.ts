@@ -66,6 +66,17 @@ export async function diarize(
   return sendToSidecar(msg);
 }
 
+export async function createMeeting(params: {
+  title?: string;
+  audioPath?: string;
+}): Promise<Record<string, unknown>> {
+  return sendToSidecar({
+    type: 'create_meeting',
+    title: params.title,
+    audio_path: params.audioPath,
+  });
+}
+
 /** Request LLM summarization of a transcript. */
 export async function summarize(
   transcript: string,

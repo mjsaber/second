@@ -61,7 +61,10 @@ impl AudioCaptureManager {
     /// Returns `true` if a recording is currently in progress.
     #[allow(dead_code)] // Used in tests; will be wired to a Tauri command as needed.
     pub fn is_recording(&self) -> Result<bool, String> {
-        let inner = self.inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
         Ok(inner.status == RecordingStatus::Recording)
     }
 
@@ -73,8 +76,15 @@ impl AudioCaptureManager {
     /// # Errors
     /// Returns an error if a recording is already in progress, if the device
     /// cannot be found, or if the WAV file cannot be created.
-    pub fn start(&self, device_name: Option<&str>, recordings_dir: &PathBuf) -> Result<String, String> {
-        let mut inner = self.inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+    pub fn start(
+        &self,
+        device_name: Option<&str>,
+        recordings_dir: &PathBuf,
+    ) -> Result<String, String> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
 
         if inner.status == RecordingStatus::Recording {
             return Err("A recording is already in progress".into());
@@ -110,7 +120,10 @@ impl AudioCaptureManager {
             .spawn(move || run_capture(device, file_path, stop_flag))
             .map_err(|e| format!("Failed to spawn capture thread: {e}"))?;
 
-        let mut handle_lock = self.thread_handle.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        let mut handle_lock = self
+            .thread_handle
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
         *handle_lock = Some(thread_handle);
 
         Ok(file_path_str)
@@ -123,7 +136,10 @@ impl AudioCaptureManager {
     /// thread encountered an error.
     pub fn stop(&self) -> Result<String, String> {
         let file_path = {
-            let mut inner = self.inner.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+            let mut inner = self
+                .inner
+                .lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
 
             if inner.status != RecordingStatus::Recording {
                 return Err("No recording in progress".into());
@@ -133,7 +149,9 @@ impl AudioCaptureManager {
             // drop the borrow on `inner` before mutating it.
             let stop_flag = Arc::clone(&inner.stop_flag);
             {
-                let mut flag = stop_flag.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+                let mut flag = stop_flag
+                    .lock()
+                    .map_err(|e| format!("Lock poisoned: {e}"))?;
                 *flag = true;
             }
 
@@ -146,7 +164,10 @@ impl AudioCaptureManager {
 
         // Wait for the capture thread to finish.
         let thread_handle = {
-            let mut handle_lock = self.thread_handle.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+            let mut handle_lock = self
+                .thread_handle
+                .lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
             handle_lock.take()
         };
 
@@ -245,9 +266,7 @@ fn run_capture(
                     convert_to_mono_16k(data, actual_sample_rate, actual_channels)
                 } else {
                     // Direct: input is already f32 mono 16kHz, just convert to i16.
-                    data.iter()
-                        .map(|&s| float_to_i16(s))
-                        .collect()
+                    data.iter().map(|&s| float_to_i16(s)).collect()
                 };
 
                 for sample in samples {
@@ -281,10 +300,7 @@ fn run_capture(
     loop {
         std::thread::sleep(std::time::Duration::from_millis(50));
         // If the mutex is poisoned, stop recording (fail-safe).
-        let should_stop = stop_flag
-            .lock()
-            .map(|f| *f)
-            .unwrap_or(true);
+        let should_stop = stop_flag.lock().map(|f| *f).unwrap_or(true);
         if should_stop {
             break;
         }
@@ -421,8 +437,11 @@ mod tests {
         let input: Vec<f32> = (0..320).map(|i| (i as f32) / 320.0).collect();
         let output = convert_to_mono_16k(&input, 32_000, 1);
         // With 320 frames at 32kHz, we expect ~160 frames at 16kHz.
-        assert!(output.len() >= 150 && output.len() <= 170,
-            "expected ~160 output frames, got {}", output.len());
+        assert!(
+            output.len() >= 150 && output.len() <= 170,
+            "expected ~160 output frames, got {}",
+            output.len()
+        );
     }
 
     #[test]
@@ -487,7 +506,10 @@ mod tests {
                 // verify the directory was created before the device lookup
                 // might have failed. Note: the dir creation happens before
                 // device lookup, so it should still exist.
-                assert!(tmp.is_dir(), "recordings directory should be created even if device fails");
+                assert!(
+                    tmp.is_dir(),
+                    "recordings directory should be created even if device fails"
+                );
             }
         }
 

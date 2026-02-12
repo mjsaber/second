@@ -9,7 +9,13 @@ from __future__ import annotations
 import json
 import urllib.request
 from dataclasses import dataclass
-from enum import StrEnum
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum as _Enum
+
+    StrEnum = _Enum("StrEnum", {}, type=str)
 
 
 class LLMProvider(StrEnum):
@@ -237,7 +243,7 @@ class SummarizationService:
         )
 
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as e:
             raise ConnectionError(f"Failed to connect to ollama: {e}") from e

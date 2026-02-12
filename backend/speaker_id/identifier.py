@@ -137,6 +137,8 @@ class SpeakerIdentifier:
             raise RuntimeError("Database not configured. Pass a db to SpeakerIdentifier.")
 
         speaker = self.db.get_speaker(speaker_id)
+        if speaker is None:
+            return
         old_blob = speaker["embedding"]
         old_count: int = speaker["embedding_count"]
 

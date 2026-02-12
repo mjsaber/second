@@ -90,10 +90,7 @@ mod tests {
             }
             Err(e) => {
                 // Acceptable on headless systems.
-                assert!(
-                    !e.is_empty(),
-                    "error message should not be empty"
-                );
+                assert!(!e.is_empty(), "error message should not be empty");
             }
         }
     }

@@ -6,7 +6,12 @@ and this Python sidecar. All messages are single-line JSON terminated by newline
 
 from __future__ import annotations
 
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum as _Enum
+
+    StrEnum = _Enum("StrEnum", {}, type=str)
 from typing import Any
 
 
@@ -15,6 +20,7 @@ class MessageType(StrEnum):
 
     TRANSCRIBE_CHUNK = "transcribe_chunk"
     DIARIZE = "diarize"
+    CREATE_MEETING = "create_meeting"
     IDENTIFY_SPEAKERS = "identify_speakers"
     SUMMARIZE = "summarize"
     HEALTH = "health"
@@ -32,6 +38,7 @@ class ResponseType(StrEnum):
 
     TRANSCRIPTION = "transcription"
     DIARIZATION_COMPLETE = "diarization_complete"
+    MEETING_CREATED = "meeting_created"
     SPEAKER_MATCH = "speaker_match"
     SUMMARY_COMPLETE = "summary_complete"
     HEALTH = "health"

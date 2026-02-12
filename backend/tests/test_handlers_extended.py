@@ -9,7 +9,6 @@ save_settings, load_settings.
 from __future__ import annotations
 
 import base64
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,8 +16,7 @@ import pytest
 
 from db.database import DatabaseManager
 from ipc import handlers as _handlers_module
-from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
-
+from ipc.protocol import IPCMessage, MessageType, ResponseType
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -189,16 +187,21 @@ class TestHandleDiarizeEmbeddings:
         mock_pipeline_inst = MagicMock()
         seg = MagicMock(speaker="SPEAKER_00", start=0.0, end=5.0)
         mock_pipeline_inst.diarize.return_value = MagicMock(segments=[seg])
-        mock_pipeline_inst.extract_embeddings.return_value = {
-            "SPEAKER_00": [0.1, 0.2, 0.3]
-        }
+        mock_pipeline_inst.extract_embeddings.return_value = {"SPEAKER_00": [0.1, 0.2, 0.3]}
         mock_pipeline_cls.return_value = mock_pipeline_inst
+        mock_engine_cls = MagicMock()
+        mock_engine_inst = MagicMock()
+        mock_engine_inst.transcribe_file.return_value = []
+        mock_engine_cls.return_value = mock_engine_inst
 
         msg = IPCMessage(
             type=MessageType.DIARIZE,
             payload={"audio_path": "/tmp/test.wav"},
         )
-        with patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls):
+        with (
+            patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls),
+            patch("transcription.engine.TranscriptionEngine", mock_engine_cls),
+        ):
             resp = handle_diarize(msg)
 
         assert resp.type == ResponseType.DIARIZATION_COMPLETE
@@ -216,17 +219,54 @@ class TestHandleDiarizeEmbeddings:
         mock_pipeline_inst.diarize.return_value = result
         mock_pipeline_inst.extract_embeddings.return_value = {}
         mock_pipeline_cls.return_value = mock_pipeline_inst
+        mock_engine_cls = MagicMock()
+        mock_engine_inst = MagicMock()
+        mock_engine_inst.transcribe_file.return_value = []
+        mock_engine_cls.return_value = mock_engine_inst
 
         msg = IPCMessage(
             type=MessageType.DIARIZE,
             payload={"audio_path": "/tmp/test.wav"},
         )
-        with patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls):
+        with (
+            patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls),
+            patch("transcription.engine.TranscriptionEngine", mock_engine_cls),
+        ):
             handle_diarize(msg)
 
         mock_pipeline_inst.extract_embeddings.assert_called_once_with(
             "/tmp/test.wav", result.segments
         )
+
+    def test_includes_text_in_segments(self) -> None:
+        from ipc.handlers import handle_diarize
+
+        mock_pipeline_cls = MagicMock()
+        mock_pipeline_inst = MagicMock()
+        seg = MagicMock(speaker="SPEAKER_00", start=0.0, end=5.0)
+        mock_pipeline_inst.diarize.return_value = MagicMock(segments=[seg])
+        mock_pipeline_inst.extract_embeddings.return_value = {}
+        mock_pipeline_cls.return_value = mock_pipeline_inst
+
+        mock_engine_cls = MagicMock()
+        mock_engine_inst = MagicMock()
+        mock_engine_inst.transcribe_file.return_value = [
+            MagicMock(text="Hello", start=0.1, end=1.0),
+            MagicMock(text="world", start=1.1, end=2.0),
+        ]
+        mock_engine_cls.return_value = mock_engine_inst
+
+        msg = IPCMessage(
+            type=MessageType.DIARIZE,
+            payload={"audio_path": "/tmp/test.wav"},
+        )
+        with (
+            patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls),
+            patch("transcription.engine.TranscriptionEngine", mock_engine_cls),
+        ):
+            resp = handle_diarize(msg)
+
+        assert resp.data["segments"][0]["text"] == "Hello world"
 
 
 # ===========================================================================
@@ -309,7 +349,7 @@ class TestHandleIdentifySpeakersDB:
 
         with patch("ipc.handlers._get_db") as mock_get_db:
             mock_get_db.return_value = in_memory_db
-            resp = handle_identify_speakers(msg)
+            handle_identify_speakers(msg)
 
         # Verify embedding was updated
         speaker = in_memory_db.get_speaker(speaker_id)
@@ -329,6 +369,38 @@ class TestHandleIdentifySpeakersDB:
         resp = handle_identify_speakers(msg)
         assert resp.type == ResponseType.SPEAKER_MATCH
         assert resp.data["matches"][0]["matched_name"] == "Alice"
+
+
+class TestHandleCreateMeeting:
+    def test_creates_meeting_and_returns_id(self, in_memory_db: DatabaseManager) -> None:
+        from ipc.handlers import handle_create_meeting
+
+        msg = IPCMessage(
+            type=MessageType.CREATE_MEETING,
+            payload={"title": "Kickoff"},
+        )
+
+        with patch("ipc.handlers._get_db") as mock_get_db:
+            mock_get_db.return_value = in_memory_db
+            resp = handle_create_meeting(msg)
+
+        assert resp.type == ResponseType.MEETING_CREATED
+        meeting_id = resp.data["meeting_id"]
+        assert in_memory_db.get_meeting(meeting_id) is not None
+
+    def test_creates_meeting_without_title(self, in_memory_db: DatabaseManager) -> None:
+        from ipc.handlers import handle_create_meeting
+
+        msg = IPCMessage(
+            type=MessageType.CREATE_MEETING,
+            payload={},
+        )
+
+        with patch("ipc.handlers._get_db") as mock_get_db:
+            mock_get_db.return_value = in_memory_db
+            resp = handle_create_meeting(msg)
+
+        assert resp.type == ResponseType.MEETING_CREATED
 
 
 # ===========================================================================
@@ -667,7 +739,7 @@ class TestHandleSaveSettings:
                     "model_name": "claude-sonnet-4-5-20250929",
                     "api_key": "sk-test",
                     "audio_device": "MacBook Pro Microphone",
-                    "audio_retention": "30",
+                    "audio_retention": "keep",
                 }
             },
         )
@@ -753,7 +825,7 @@ class TestHandleLoadSettings:
         assert settings["model_name"] == ""
         assert settings["api_key"] == ""
         assert settings["audio_device"] == ""
-        assert settings["audio_retention"] == "30"
+        assert settings["audio_retention"] == "keep"
 
     def test_merges_stored_with_defaults(self, in_memory_db: DatabaseManager) -> None:
         """Verify partially stored settings get merged with defaults."""
@@ -769,7 +841,7 @@ class TestHandleLoadSettings:
 
         settings = resp.data["settings"]
         assert settings["llm_provider"] == "openai"
-        assert settings["audio_retention"] == "30"  # default
+        assert settings["audio_retention"] == "keep"
 
 
 # ===========================================================================
@@ -785,6 +857,7 @@ class TestHandlerMapRegistration:
         from ipc.handlers import HANDLER_MAP
 
         new_types = [
+            MessageType.CREATE_MEETING,
             MessageType.SAVE_SUMMARY,
             MessageType.GET_ALL_SPEAKERS,
             MessageType.GET_SUMMARIES_FOR_SPEAKER,
@@ -796,7 +869,9 @@ class TestHandlerMapRegistration:
         for msg_type in new_types:
             assert msg_type in HANDLER_MAP, f"Missing handler for {msg_type}"
 
-    def test_dispatch_routes_save_summary(self, in_memory_db: DatabaseManager, tmp_summaries_dir: Path) -> None:
+    def test_dispatch_routes_save_summary(
+        self, in_memory_db: DatabaseManager, tmp_summaries_dir: Path
+    ) -> None:
         """Verify dispatch routes save_summary through the full path."""
         from main import dispatch
 
@@ -808,16 +883,18 @@ class TestHandlerMapRegistration:
         ):
             mock_get_db.return_value = in_memory_db
             mock_get_dir.return_value = str(tmp_summaries_dir)
-            result = dispatch({
-                "type": "save_summary",
-                "meeting_id": meeting_id,
-                "transcript": "hello",
-                "provider": "claude",
-                "model": "claude-sonnet",
-                "content": "# Summary",
-                "speaker_names": ["Alice"],
-                "date": "2026-02-09",
-            })
+            result = dispatch(
+                {
+                    "type": "save_summary",
+                    "meeting_id": meeting_id,
+                    "transcript": "hello",
+                    "provider": "claude",
+                    "model": "claude-sonnet",
+                    "content": "# Summary",
+                    "speaker_names": ["Alice"],
+                    "date": "2026-02-09",
+                }
+            )
 
         assert result["type"] == "summary_saved"
 
@@ -847,10 +924,12 @@ class TestHandlerMapRegistration:
 
         with patch("ipc.handlers._get_db") as mock_get_db:
             mock_get_db.return_value = in_memory_db
-            result = dispatch({
-                "type": "save_settings",
-                "settings": {"llm_provider": "claude"},
-            })
+            result = dispatch(
+                {
+                    "type": "save_settings",
+                    "settings": {"llm_provider": "claude"},
+                }
+            )
 
         assert result["type"] == "settings_saved"
 
@@ -860,9 +939,11 @@ class TestHandlerMapRegistration:
 
         with patch("ipc.handlers._get_db") as mock_get_db:
             mock_get_db.return_value = in_memory_db
-            result = dispatch({
-                "type": "search_summaries",
-                "query": "test",
-            })
+            result = dispatch(
+                {
+                    "type": "search_summaries",
+                    "query": "test",
+                }
+            )
 
         assert result["type"] == "search_results"

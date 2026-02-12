@@ -96,9 +96,7 @@ fn start_audio_recording(
         .recordings_dir
         .lock()
         .map_err(|e| format!("Lock poisoned: {e}"))?;
-    state
-        .manager
-        .start(device_name.as_deref(), &recordings_dir)
+    state.manager.start(device_name.as_deref(), &recordings_dir)
 }
 
 /// Stop the current audio recording. Returns the path to the finalized WAV file.

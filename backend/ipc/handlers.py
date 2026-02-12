@@ -16,6 +16,7 @@ from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
 # ---------------------------------------------------------------------------
 
 _db_instance: Any = None
+_db_instance_path: str | None = None
 _transcription_engines: dict[str, Any] = {}
 
 # Default settings values
@@ -24,25 +25,46 @@ _SETTINGS_DEFAULTS: dict[str, str] = {
     "model_name": "",
     "api_key": "",
     "audio_device": "",
-    "audio_retention": "30",
+    "audio_retention": "keep",
 }
 
 
-def _get_db() -> Any:
+def _get_db(db_path: str | None = None) -> Any:
     """Return a shared DatabaseManager instance (lazy-initialized).
 
     In production the DB path comes from an environment variable or config;
     in tests this function is patched to return an in-memory database.
     """
-    global _db_instance
+    global _db_instance, _db_instance_path
     if _db_instance is None:
         import os
 
         from db.database import DatabaseManager
 
-        db_path = os.environ.get("SECOND_DB_PATH", "second.db")
+        if db_path is not None and not str(db_path).strip():
+            db_path = None
+        if db_path is None:
+            db_path = os.environ.get("SECOND_DB_PATH")
+        if db_path is None:
+            base_dir = os.path.join(os.path.expanduser("~"), ".second")
+            os.makedirs(base_dir, exist_ok=True)
+            db_path = os.path.join(base_dir, "second.db")
         _db_instance = DatabaseManager(db_path)
         _db_instance.initialize()
+        _db_instance_path = db_path
+    elif db_path is not None and _db_instance_path != db_path:
+        import os
+
+        from db.database import DatabaseManager
+
+        if not str(db_path).strip():
+            return _db_instance
+        base_dir = os.path.dirname(db_path)
+        if base_dir:
+            os.makedirs(base_dir, exist_ok=True)
+        _db_instance = DatabaseManager(db_path)
+        _db_instance.initialize()
+        _db_instance_path = db_path
     return _db_instance
 
 
@@ -54,6 +76,31 @@ def _get_summary_dir() -> str:
     import os
 
     return os.environ.get("SECOND_SUMMARIES_DIR", "summaries")
+
+
+def _merge_diarization_with_transcript(
+    diarization_segments: list[Any],
+    transcript_segments: list[Any],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for diar_seg in diarization_segments:
+        texts: list[str] = []
+        for trans_seg in transcript_segments:
+            overlap_start = max(diar_seg.start, trans_seg.start)
+            overlap_end = min(diar_seg.end, trans_seg.end)
+            if overlap_end > overlap_start:
+                text = trans_seg.text.strip()
+                if text:
+                    texts.append(text)
+        merged.append(
+            {
+                "speaker": diar_seg.speaker,
+                "start": diar_seg.start,
+                "end": diar_seg.end,
+                "text": " ".join(texts),
+            }
+        )
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -147,15 +194,22 @@ def handle_diarize(msg: IPCMessage) -> IPCResponse:
 
     try:
         from diarization.pipeline import DiarizationPipeline
+        from transcription.engine import TranscriptionEngine
 
         pipeline = DiarizationPipeline()
         pipeline.load()
         result = pipeline.diarize(audio_path, num_speakers=num_speakers)
         embeddings = pipeline.extract_embeddings(audio_path, result.segments)
 
-        segments_data = [
-            {"speaker": seg.speaker, "start": seg.start, "end": seg.end} for seg in result.segments
-        ]
+        cache_key = "_file"
+        if cache_key not in _transcription_engines:
+            engine = TranscriptionEngine()
+            engine.load_model()
+            _transcription_engines[cache_key] = engine
+        engine = _transcription_engines[cache_key]
+        transcript_segments = engine.transcribe_file(audio_path)
+
+        segments_data = _merge_diarization_with_transcript(result.segments, transcript_segments)
 
         return IPCResponse.ok(
             ResponseType.DIARIZATION_COMPLETE,
@@ -184,10 +238,11 @@ def handle_identify_speakers(msg: IPCMessage) -> IPCResponse:
 
     embeddings: dict[str, list[float]] = msg.payload["embeddings"]
     known_embeddings: dict[str, list[float]] | None = msg.payload.get("known_embeddings")
-    has_db = "db_path" in msg.payload
+    db_path = msg.payload.get("db_path")
+    has_db = db_path is not None
 
     if has_db:
-        db = _get_db()
+        db = _get_db(str(db_path))
         identifier = SpeakerIdentifier(db=db)
         matches = identifier.identify_from_db(embeddings)
 
@@ -220,6 +275,14 @@ def handle_identify_speakers(msg: IPCMessage) -> IPCResponse:
     ]
 
     return IPCResponse.ok(ResponseType.SPEAKER_MATCH, matches=matches_data)
+
+
+def handle_create_meeting(msg: IPCMessage) -> IPCResponse:
+    title: str | None = msg.payload.get("title")
+    audio_path: str | None = msg.payload.get("audio_path")
+    db = _get_db()
+    meeting_id = db.create_meeting(title=title, audio_path=audio_path)
+    return IPCResponse.ok(ResponseType.MEETING_CREATED, meeting_id=meeting_id)
 
 
 def handle_summarize(msg: IPCMessage) -> IPCResponse:
@@ -327,11 +390,13 @@ def handle_get_all_speakers(msg: IPCMessage) -> IPCResponse:
             (speaker["id"],),
         ).fetchone()["cnt"]
 
-        speakers_data.append({
-            "id": speaker["id"],
-            "name": speaker["name"],
-            "meeting_count": meeting_count,
-        })
+        speakers_data.append(
+            {
+                "id": speaker["id"],
+                "name": speaker["name"],
+                "meeting_count": meeting_count,
+            }
+        )
 
     return IPCResponse.ok(ResponseType.SPEAKERS_LIST, speakers=speakers_data)
 
@@ -398,9 +463,7 @@ def handle_get_summary_detail(msg: IPCMessage) -> IPCResponse:
     summary_id: int = msg.payload["summary_id"]
     db = _get_db()
 
-    row = db.connection.execute(
-        "SELECT * FROM summaries WHERE id = ?", (summary_id,)
-    ).fetchone()
+    row = db.connection.execute("SELECT * FROM summaries WHERE id = ?", (summary_id,)).fetchone()
 
     if row is None:
         return IPCResponse.error(f"Summary not found for id={summary_id}")
@@ -476,6 +539,8 @@ def handle_load_settings(msg: IPCMessage) -> IPCResponse:
     for key, default_value in _SETTINGS_DEFAULTS.items():
         stored = db.get_setting(key)
         settings[key] = stored if stored is not None else default_value
+    if settings.get("audio_retention") not in {"keep", "delete"}:
+        settings["audio_retention"] = _SETTINGS_DEFAULTS["audio_retention"]
 
     return IPCResponse.ok(ResponseType.SETTINGS_LOADED, settings=settings)
 
@@ -488,6 +553,7 @@ HANDLER_MAP: dict[str, Callable[[IPCMessage], IPCResponse]] = {
     MessageType.HEALTH: handle_health,
     MessageType.TRANSCRIBE_CHUNK: handle_transcribe_chunk,
     MessageType.DIARIZE: handle_diarize,
+    MessageType.CREATE_MEETING: handle_create_meeting,
     MessageType.IDENTIFY_SPEAKERS: handle_identify_speakers,
     MessageType.SUMMARIZE: handle_summarize,
     MessageType.SAVE_SUMMARY: handle_save_summary,

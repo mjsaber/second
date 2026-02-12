@@ -4,12 +4,12 @@
   import {
     startSidecar,
     stopSidecar,
-    sendToSidecar,
     diarize,
     summarize,
     startAudioRecording,
     stopAudioRecording,
     saveSummary,
+    createMeeting,
   } from '../services/sidecar.js';
 
   let timerInterval: ReturnType<typeof setInterval> | null = $state(null);
@@ -96,9 +96,17 @@
     errorMessage = '';
   }
 
+  function getSidecarError(result: Record<string, unknown>): string | null {
+    if (result.type === 'error') {
+      return typeof result.message === 'string' ? result.message : 'Unknown error';
+    }
+    return null;
+  }
+
   async function handleStartRecording(): Promise<void> {
     clearError();
     isStarting = true;
+    let audioRecordingStarted = false;
 
     try {
       // Connect to sidecar if not already connected
@@ -110,6 +118,18 @@
       // Tell Rust to begin audio recording
       const deviceArg = appState.settings.audioDevice === 'default' ? undefined : appState.settings.audioDevice;
       await startAudioRecording(deviceArg);
+      audioRecordingStarted = true;
+
+      const meetingTitle = `Meeting ${new Date().toLocaleString()}`;
+      const createResult = await createMeeting({ title: meetingTitle });
+      const createError = getSidecarError(createResult);
+      if (createError) {
+        throw new Error(createError);
+      }
+      const meetingId = Number(createResult.meeting_id);
+      if (!meetingId) {
+        throw new Error('Failed to create meeting');
+      }
 
       // Update state
       appState.isRecording = true;
@@ -117,8 +137,8 @@
       appState.transcript = [];
       appState.processingState = 'recording';
       appState.currentMeeting = {
-        id: Date.now(),
-        title: `Meeting ${new Date().toLocaleString()}`,
+        id: meetingId,
+        title: meetingTitle,
         status: 'recording',
         startedAt: new Date().toISOString(),
       };
@@ -128,51 +148,36 @@
         appState.recordingDuration += 1;
       }, 1000);
 
-      // Start polling for transcript segments
-      pollTranscript();
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
+      if (audioRecordingStarted) {
+        try {
+          await stopAudioRecording();
+        } catch {
+        }
+      }
       appState.isRecording = false;
       appState.processingState = 'idle';
       appState.sidecarConnected = false;
+      appState.currentMeeting = null;
     } finally {
       isStarting = false;
-    }
-  }
-
-  async function pollTranscript(): Promise<void> {
-    while (appState.isRecording && alive) {
-      try {
-        const response = await sendToSidecar({ type: 'get_transcript' });
-        if (response.segments && Array.isArray(response.segments)) {
-          const newSegments = response.segments as TranscriptSegment[];
-          if (newSegments.length > appState.transcript.length) {
-            appState.transcript = newSegments;
-          }
-        }
-      } catch {
-        // Ignore polling errors while recording — the sidecar may just
-        // not have new data yet.
-      }
-      // Poll every 1 second
-      await new Promise((r) => setTimeout(r, 1000));
     }
   }
 
   async function handleStopRecording(): Promise<void> {
     clearError();
 
-    // Stop the timer
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-
-    appState.isRecording = false;
-
     try {
       // Tell Rust to stop audio recording and get the audio path
       const audioPath = await stopAudioRecording();
+
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+
+      appState.isRecording = false;
 
       // Update meeting
       if (appState.currentMeeting) {
@@ -188,6 +193,10 @@
       appState.processingState = 'diarizing';
 
       const diarizeResult = await diarize(audioPath);
+      const diarizeError = getSidecarError(diarizeResult);
+      if (diarizeError) {
+        throw new Error(diarizeError);
+      }
 
       // Update transcript with speaker-assigned segments
       if (diarizeResult.segments && Array.isArray(diarizeResult.segments)) {
@@ -227,6 +236,9 @@
       const fullTranscript = appState.transcript
         .map((seg) => (seg.speaker ? `${seg.speaker}: ${seg.text}` : seg.text))
         .join('\n');
+      if (!fullTranscript.trim()) {
+        throw new Error('Transcript is empty');
+      }
 
       const summarizeResult = await summarize(
         fullTranscript,
@@ -234,13 +246,46 @@
         appState.settings.modelName,
         appState.settings.apiKey,
       );
+      const summarizeError = getSidecarError(summarizeResult);
+      if (summarizeError) {
+        throw new Error(summarizeError);
+      }
 
       // ---- Persist summary ----
-      const summaryContent = (summarizeResult.markdown as string) ?? '';
-      const speakerNames = appState.detectedSpeakers.map(
-        (s) => s.suggestedName ?? s.label,
+      const summaryContent = typeof summarizeResult.markdown === 'string' ? summarizeResult.markdown : '';
+      if (!summaryContent.trim()) {
+        throw new Error('Summary is empty');
+      }
+      const speakerNames = Array.from(
+        new Set(
+          appState.transcript
+            .map((seg) => seg.speaker?.trim())
+            .filter((speaker): speaker is string => Boolean(speaker)),
+        ),
       );
-      const meetingId = appState.currentMeeting?.id ?? Date.now();
+
+      let meetingId = appState.currentMeeting?.id;
+      if (!meetingId) {
+        const meetingTitle = `Meeting ${new Date().toLocaleString()}`;
+        const createResult = await createMeeting({ title: meetingTitle, audioPath });
+        const createError = getSidecarError(createResult);
+        if (createError) {
+          throw new Error(createError);
+        }
+        const createdId = Number(createResult.meeting_id);
+        if (!createdId) {
+          throw new Error('Failed to create meeting');
+        }
+        meetingId = createdId;
+        appState.currentMeeting = {
+          id: createdId,
+          title: meetingTitle,
+          status: 'processing',
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          audioPath,
+        };
+      }
 
       await saveSummary({
         meetingId,
@@ -262,13 +307,23 @@
       }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
-      appState.processingState = 'idle';
+      if (appState.isRecording) {
+        appState.processingState = 'recording';
+      } else {
+        appState.processingState = 'idle';
+      }
     }
   }
 
   function waitForLabeling(): Promise<void> {
     return new Promise((resolve) => {
       labelingInterval = setInterval(() => {
+        if (!alive) {
+          if (labelingInterval) clearInterval(labelingInterval);
+          labelingInterval = null;
+          resolve();
+          return;
+        }
         if (!appState.showLabelingModal) {
           if (labelingInterval) clearInterval(labelingInterval);
           labelingInterval = null;

@@ -30,7 +30,12 @@
           appState.settings.audioDevice = s.audio_device;
         }
         if (s.audio_retention) {
-          appState.settings.audioRetention = s.audio_retention as AppSettings['audioRetention'];
+          const retention = s.audio_retention;
+          if (retention === 'keep' || retention === 'delete') {
+            appState.settings.audioRetention = retention;
+          } else {
+            appState.settings.audioRetention = 'keep';
+          }
         }
       })
       .catch(() => {

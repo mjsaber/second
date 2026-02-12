@@ -21,7 +21,6 @@ from __future__ import annotations
 import base64
 import io
 import json
-import struct
 import subprocess
 import sys
 import threading
@@ -165,9 +164,7 @@ class SidecarProcess:
         """
         with self._lock:
             if self._proc.poll() is not None:
-                raise RuntimeError(
-                    f"Sidecar process exited with code {self._proc.returncode}"
-                )
+                raise RuntimeError(f"Sidecar process exited with code {self._proc.returncode}")
 
             line = json.dumps(msg) + "\n"
             assert self._proc.stdin is not None
@@ -225,7 +222,8 @@ def sidecar() -> SidecarProcess:
     """
     assert VENV_PYTHON.exists(), (
         f"Virtual-env Python not found at {VENV_PYTHON}. "
-        f"Create it with: cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+        "Create it with: cd backend && python3 -m venv .venv && "
+        ".venv/bin/pip install -r requirements.txt"
     )
     assert MAIN_PY.exists(), f"Sidecar entry point not found at {MAIN_PY}"
 
@@ -269,7 +267,8 @@ class TestTranscribeEnglishFull:
 
     def test_transcribe_english_full(self, sidecar: SidecarProcess) -> None:
         """Send entire English WAV as base64 PCM, check key words appear."""
-        assert TEST_ENGLISH_WAV.exists(), f"Fixture not found: {TEST_ENGLISH_WAV}"
+        if not TEST_ENGLISH_WAV.exists():
+            pytest.skip(f"Fixture not found: {TEST_ENGLISH_WAV}")
 
         pcm_bytes, n_channels, sample_width, framerate = _read_wav_pcm(TEST_ENGLISH_WAV)
         audio_b64 = base64.b64encode(pcm_bytes).decode("ascii")
@@ -308,7 +307,8 @@ class TestTranscribeChineseFull:
 
     def test_transcribe_chinese_full(self, sidecar: SidecarProcess) -> None:
         """Send entire Chinese WAV as base64 PCM, check key Chinese words appear."""
-        assert TEST_CHINESE_WAV.exists(), f"Fixture not found: {TEST_CHINESE_WAV}"
+        if not TEST_CHINESE_WAV.exists():
+            pytest.skip(f"Fixture not found: {TEST_CHINESE_WAV}")
 
         pcm_bytes, n_channels, sample_width, framerate = _read_wav_pcm(TEST_CHINESE_WAV)
         audio_b64 = base64.b64encode(pcm_bytes).decode("ascii")
@@ -346,7 +346,8 @@ class TestTranscribeEnglishChunks:
 
     def test_transcribe_english_chunks(self, sidecar: SidecarProcess) -> None:
         """Simulate live transcription by sending ~5s PCM chunks sequentially."""
-        assert TEST_ENGLISH_WAV.exists(), f"Fixture not found: {TEST_ENGLISH_WAV}"
+        if not TEST_ENGLISH_WAV.exists():
+            pytest.skip(f"Fixture not found: {TEST_ENGLISH_WAV}")
 
         pcm_bytes, n_channels, sample_width, framerate = _read_wav_pcm(TEST_ENGLISH_WAV)
         chunks = _split_pcm_into_chunks(
@@ -400,7 +401,8 @@ class TestTranscribeChineseChunks:
 
     def test_transcribe_chinese_chunks(self, sidecar: SidecarProcess) -> None:
         """Simulate live transcription by sending ~5s PCM chunks for Chinese audio."""
-        assert TEST_CHINESE_WAV.exists(), f"Fixture not found: {TEST_CHINESE_WAV}"
+        if not TEST_CHINESE_WAV.exists():
+            pytest.skip(f"Fixture not found: {TEST_CHINESE_WAV}")
 
         pcm_bytes, n_channels, sample_width, framerate = _read_wav_pcm(TEST_CHINESE_WAV)
         chunks = _split_pcm_into_chunks(
@@ -457,7 +459,8 @@ class TestTranscribeWithInitialPrompt:
         The initial_prompt should help Whisper correctly spell proper nouns and
         domain-specific terms that might otherwise be misheard.
         """
-        assert TEST_ENGLISH_WAV.exists(), f"Fixture not found: {TEST_ENGLISH_WAV}"
+        if not TEST_ENGLISH_WAV.exists():
+            pytest.skip(f"Fixture not found: {TEST_ENGLISH_WAV}")
 
         pcm_bytes, n_channels, sample_width, framerate = _read_wav_pcm(TEST_ENGLISH_WAV)
         audio_b64 = base64.b64encode(pcm_bytes).decode("ascii")

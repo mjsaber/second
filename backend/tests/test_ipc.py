@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from db.database import DatabaseManager
 from ipc.protocol import IPCMessage, IPCResponse, MessageType, ResponseType
 
 
@@ -131,8 +132,15 @@ class TestDispatch:
         mock_pipeline_inst.diarize.return_value = MagicMock(segments=[])
         mock_pipeline_inst.extract_embeddings.return_value = {}
         mock_pipeline_cls.return_value = mock_pipeline_inst
+        mock_engine_cls = MagicMock()
+        mock_engine_inst = MagicMock()
+        mock_engine_inst.transcribe_file.return_value = []
+        mock_engine_cls.return_value = mock_engine_inst
 
-        with patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls):
+        with (
+            patch("diarization.pipeline.DiarizationPipeline", mock_pipeline_cls),
+            patch("transcription.engine.TranscriptionEngine", mock_engine_cls),
+        ):
             result = dispatch(
                 {
                     "type": "diarize",
@@ -141,6 +149,16 @@ class TestDispatch:
                 }
             )
         assert result["type"] == "diarization_complete"
+
+    def test_dispatch_routes_create_meeting_message(self) -> None:
+        from main import dispatch
+
+        db = DatabaseManager(db_path=None)
+        db.initialize()
+        with patch("ipc.handlers._get_db") as mock_get_db:
+            mock_get_db.return_value = db
+            result = dispatch({"type": "create_meeting", "title": "Sprint"})
+        assert result["type"] == "meeting_created"
 
     def test_dispatch_routes_identify_speakers_message(self) -> None:
         """Verify that dispatch routes an identify_speakers message correctly."""
